@@ -1,100 +1,162 @@
 #!/bin/bash
 
 # Configuration
-PARALLEL_THRESHOLD=5  # If max time > this, run tests in parallel
-NUM_PARALLEL_JOBS=6   # Number of parallel jobs
+PARALLEL_THRESHOLD=5   # If quick test time > this, run tests in parallel
+NUM_PARALLEL_JOBS=6    # Number of parallel jobs
+
+g++ -std=c++17 -O2 -o checker checker.cpp  2>/dev/null
+CHECKER="./checker"    # Path to checker executable (must accept: checker tested_out expected_out -> exit 0 = OK)
 
 # Function to measure time and memory for a single test
+# Args: bin input_file output_file
 measure_test() {
     local bin=$1
     local input_file=$2
     local output_file=$3
-    
-    # Create unique temp file for this measurement
-    local temp_file=$(mktemp)
-    
-    # Use /usr/bin/time for memory measurement (GNU time format)
-    # %e = elapsed real time, %M = maximum resident set size in KB
+
+    local temp_file
+    temp_file=$(mktemp)
+
+    # %e = elapsed real time, %M = max resident set size (KB)
     /usr/bin/time -f "%e %M" -o "$temp_file" "$bin" < "$input_file" > "$output_file" 2>&1
-    
-    # Read the timing results
+
     local elapsed_time max_memory
-    read elapsed_time max_memory < "$temp_file"
+    read -r elapsed_time max_memory < "$temp_file"
     rm -f "$temp_file"
-    
+
     echo "$elapsed_time $max_memory"
 }
 
-# Function to run tests in parallel
+# Run checker; returns checker exit code or special codes:
+#  0  -> OK
+#  1+ -> WA (or checker-specific non-zero)
+# 126 -> checker missing or not executable
+# 127 -> expected output missing
+run_checker_on_expected() {
+    local input_file=$1
+    local tested_out=$2
+    local expected_out=$3
+
+    if [ ! -x "$CHECKER" ]; then
+        return 126
+    fi
+
+    if [ ! -e "$expected_out" ]; then
+        return 127
+    fi
+
+    "$CHECKER" "$input_file" "$tested_out" "$expected_out" >/dev/null 2>&1
+    return $?
+}
+
+# Run tests in parallel
 run_parallel_tests() {
     local bin=$1
     local name=$2
-    
+
     echo "  Running tests in parallel (max $NUM_PARALLEL_JOBS jobs)..."
-    
-    # Create a temporary directory for individual result files
-    local temp_dir=$(mktemp -d)
-    
+
+    local temp_dir
+    temp_dir=$(mktemp -d)
+
     for input_file in inputs/*.in; do
         [ -e "$input_file" ] || continue
         test_name=$(basename "$input_file" .in)
-        
+
         (
-            # Each process writes to its own file - NO RACE CONDITION
-            result=$(measure_test "$bin" "$input_file" "/dev/null")
-            echo "$test_name $result" > "$temp_dir/${test_name}.result"
+            local out_file="$temp_dir/${test_name}.out"
+            # measure tested binary
+            result=$(measure_test "$bin" "$input_file" "$out_file")
+            read -r elapsed memory <<< "$result"
+
+            expected_out="outputs/${test_name}.out"
+
+            run_checker_on_expected "$input_file" "$out_file" "$expected_out"
+            checker_status=$?
+
+            # write: test_name elapsed memory checker_status
+            printf "%s %s %s %d\n" "$test_name" "$elapsed" "$memory" "$checker_status" > "$temp_dir/${test_name}.result"
         ) &
-        
-        # Limit number of parallel jobs
+
+        # throttle background jobs
         while [ $(jobs -r | wc -l) -ge $NUM_PARALLEL_JOBS ]; do
             sleep 0.1
         done
     done
-    
-    # Wait for all background jobs to complete
+
     wait
-    
-    # Read results into global arrays
+
     declare -g -A test_times
     declare -g -A test_mems
-    
-    # Collect all results from individual files
+    declare -g -A test_checks
+
     for result_file in "$temp_dir"/*.result; do
         [ -e "$result_file" ] || continue
-        read -r test_name elapsed memory < "$result_file"
+        read -r test_name elapsed memory checker_status < "$result_file"
         test_times[$test_name]=$elapsed
         test_mems[$test_name]=$memory
-        printf "    %-30s time: %8.3fs | mem: %8d KB\n" "$test_name" "$elapsed" "$memory"
+        test_checks[$test_name]=$checker_status
+
+        if [ "$checker_status" -eq 0 ]; then
+            check_str="OK"
+        elif [ "$checker_status" -eq 127 ]; then
+            check_str="NOOUT"
+        elif [ "$checker_status" -eq 126 ]; then
+            check_str="NOCHECK"
+        else
+            check_str="WA"
+        fi
+
+        printf "    %-30s time: %8.3fs | mem: %8d KB | result: %s\n" "$test_name" "$elapsed" "$memory" "$check_str"
     done
-    
+
     rm -rf "$temp_dir"
 }
 
-# Function to run tests sequentially
+# Run tests sequentially
 run_sequential_tests() {
     local bin=$1
     local name=$2
-    
+
     declare -g -A test_times
     declare -g -A test_mems
-    
+    declare -g -A test_checks
+
     for input_file in inputs/*.in; do
         [ -e "$input_file" ] || continue
-        
+
         test_name=$(basename "$input_file" .in)
-        
-        result=$(measure_test "$bin" "$input_file" "/dev/null")
+
+        temp_out=$(mktemp)
+        result=$(measure_test "$bin" "$input_file" "$temp_out")
         elapsed=$(echo "$result" | awk '{print $1}')
         memory=$(echo "$result" | awk '{print $2}')
-        
+
+        expected_out="outputs/${test_name}.out"
+        run_checker_on_expected "$input_file" "$temp_out" "$expected_out"
+        checker_status=$?
+
         test_times[$test_name]=$elapsed
         test_mems[$test_name]=$memory
-        
-        printf "    %-30s time: %8.3fs | mem: %8d KB\n" "$test_name" "$elapsed" "$memory"
+        test_checks[$test_name]=$checker_status
+
+        if [ "$checker_status" -eq 0 ]; then
+            check_str="OK"
+        elif [ "$checker_status" -eq 127 ]; then
+            check_str="NOOUT"
+        elif [ "$checker_status" -eq 126 ]; then
+            check_str="NOCHECK"
+        else
+            check_str="WA"
+        fi
+
+        printf "    %-30s time: %8.3fs | mem: %8d KB | result: %s\n" "$test_name" "$elapsed" "$memory" "$check_str"
+
+        rm -f "$temp_out"
     done
 }
 
-# Loop through all .cpp files in solutions/
+# Main loop over solutions
 echo "================================================"
 echo "Testing Solutions"
 echo "================================================"
@@ -103,7 +165,7 @@ for src in solutions/*.cpp; do
     [ -e "$src" ] || continue
     name=$(basename -- "$src" .cpp)
     bin="./${name}_bin"
-    
+
     echo ""
     echo "[$name]"
     echo "  Compiling..."
@@ -112,31 +174,32 @@ for src in solutions/*.cpp; do
         echo "  ✗ Compilation failed"
         continue
     fi
-    
+
     # Quick test to estimate if solution is slow
     first_input=$(ls inputs/*.in 2>/dev/null | head -n 1)
     use_parallel=0
-    
+
     if [ -n "$first_input" ]; then
         quick_result=$(measure_test "$bin" "$first_input" "/dev/null")
         quick_time=$(echo "$quick_result" | awk '{print $1}')
-        
+
         if (( $(echo "$quick_time > $PARALLEL_THRESHOLD" | bc -l) )); then
             use_parallel=1
-            echo "  ⚠ Solution appears slow (${quick_time}s on first test), using parallel bincution"
+            echo "  ⚠ Solution appears slow (${quick_time}s on first test), using parallel execution"
         fi
     fi
-    
+
     declare -A test_times
     declare -A test_mems
-    
+    declare -A test_checks
+
     if [ $use_parallel -eq 1 ]; then
         run_parallel_tests "$bin" "$name"
     else
         echo "  Running tests:"
         run_sequential_tests "$bin" "$name"
     fi
-    
+
     # Calculate statistics
     total_time=0
     max_time=0
@@ -145,15 +208,21 @@ for src in solutions/*.cpp; do
     max_mem=0
     min_mem=999999
     count=0
-    
+
+    ok_count=0
+    wa_count=0
+    noout_count=0
+    nocheck_count=0
+
     for test_name in "${!test_times[@]}"; do
         elapsed=${test_times[$test_name]}
         memory=${test_mems[$test_name]}
-        
+        checker_status=${test_checks[$test_name]}
+
         ((count++))
         total_time=$(echo "$total_time + $elapsed" | bc)
         total_mem=$(echo "$total_mem + $memory" | bc)
-        
+
         if (( $(echo "$elapsed > $max_time" | bc -l) )); then
             max_time=$elapsed
         fi
@@ -166,24 +235,37 @@ for src in solutions/*.cpp; do
         if (( $(echo "$memory < $min_mem" | bc -l) )); then
             min_mem=$memory
         fi
+
+        if [ "$checker_status" -eq 0 ]; then
+            ((ok_count++))
+        elif [ "$checker_status" -eq 127 ]; then
+            ((noout_count++))
+        elif [ "$checker_status" -eq 126 ]; then
+            ((nocheck_count++))
+        else
+            ((wa_count++))
+        fi
     done
-    
+
     if [ $count -eq 0 ]; then
         echo "  ✗ No tests completed"
         rm -f "$bin"
         continue
     fi
-    
+
     avg_time=$(echo "scale=3; $total_time / $count" | bc)
     avg_mem=$(echo "scale=0; $total_mem / $count" | bc)
-    
+
     echo ""
     printf "  Summary:\n"
     printf "    Time: total=%.3fs | avg=%.3fs | min=%.3fs | max=%.3fs\n" "$total_time" "$avg_time" "$min_time" "$max_time"
     printf "    Mem:  avg=%dKB | min=%dKB | max=%dKB\n" "$avg_mem" "$min_mem" "$max_mem"
-    
+    printf "    Checks: OK=%d | WA=%d | NOOUT=%d | NOCHECK=%d\n" "$ok_count" "$wa_count" "$noout_count" "$nocheck_count"
+
     rm -f "$bin"
 done
+
+rm -f $CHECKER
 
 echo ""
 echo "================================================"

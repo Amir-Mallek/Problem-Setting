@@ -22,7 +22,7 @@ mt19937 rng(chrono::steady_clock::now().time_since_epoch().count());
 mt19937_64 lrng(chrono::steady_clock::now().time_since_epoch().count());
 typedef uniform_int_distribution<int> uni_dist;
 typedef uniform_int_distribution<ll> luni_dist;
-
+/*
 vi rand_arr(int size, int l, int r)
 {
     assert(l <= r);
@@ -226,31 +226,32 @@ void gen_star_test(int test_id, int maxn, int maxq)
 
     fclose(stdout);
 }
+*/
+void gen_a_b(int test_id, ll a, ll b)
+{
+    string file_name = "inputs/test" + to_string(test_id) + ".in";
+    freopen(file_name.c_str(), "w", stdout);
+    cout << a << ' ' << b << '\n';
+    fclose(stdout);
+}
+void gen_a_b_random(int test_id)
+{
+    string file_name = "inputs/test" + to_string(test_id) + ".in";
+    freopen(file_name.c_str(), "w", stdout);
+    uni_dist dist(0, INT_MAX);
+    cout << dist(rng) << ' ' << dist(rng) << '\n';
+    fclose(stdout);
+}
+
 
 int main()
 {
-    auto start = chrono::high_resolution_clock::now();
+    gen_a_b(1, 0, 0);
+    gen_a_b(2, INT_MAX, INT_MAX);
 
-    // // gen max random tests
-    // rep(i, 0, 5) {
-    //     gen_random_test(i, MAXN, MAXN, "max");
-    // }
-
-    // // gen mid random tests
-    // rep(i, 5, 10) {
-    //     gen_random_test(i, MAXN, MIDQ, "mid");
-    // }
-
-    // gen mid bin tree tests
-    rep(i, 0, 5)
-    {
-        gen_star_test(i, MAXN, MIDQ);
+    rep(i, 3, 5 + 1){
+        gen_a_b_random(i);
     }
-
-    auto end = chrono::high_resolution_clock::now();
-    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
-    freopen("output.txt", "w", stdout);
-    cout << "Time taken: " << duration.count() << " ms\n";
 
     return 0;
 }

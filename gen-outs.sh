@@ -45,6 +45,8 @@ for input_file in inputs/*.in; do
     count=$((count + 1))
 done
 
+rm -f sol
+
 echo
 echo "Total tests run: $count"
 printf "Max time: %.3fs\n" "$max_time"

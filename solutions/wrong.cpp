@@ -7,8 +7,8 @@ int main()
     cin.tie();
     cout.tie();
 
-    long long a;
-    long long b;
+    int a;
+    int b;
     cin >> a >> b;
     cout << a + b << '\n';
     return 0;
