@@ -1,7 +1,7 @@
 ## Test Genration and Benchmarking in 8 simple steps
 
 1) make a copy of this repo
-2) edit the `gen.cpp` and `checker.cpp` files
+2) edit `gen.cpp`, `sol.cpp` and `checker.cpp` files
 3) add `.cpp` files to the `solutions/` folder 
 4) `rm -f inputs/*`
 5) `rm -f outputs/*`
