@@ -1,7 +1,12 @@
 #!/bin/bash
 
+echo "==================================================================================="
+echo "                              Generating Answers"
+echo "==================================================================================="
+
+
 # Ensure required directories exist
-mkdir -p outputs
+mkdir -p answers
 
 # Compile the solution
 echo "Compiling sol.cpp..."
@@ -24,7 +29,7 @@ for input_file in inputs/*.in; do
     [ -e "$input_file" ] || continue  # Skip if no files found
 
     filename=$(basename -- "$input_file")
-    output_file="outputs/${filename%.in}.out"
+    output_file="answers/${filename%.in}.ans"
 
     echo -n "Running ${filename} ... "
 
