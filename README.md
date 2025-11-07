@@ -1,9 +1,9 @@
-## Test Genration and Benchmarking in 4 simple steps
+## Test Generation and Benchmarking in 4 simple steps
 
-1) Make a copy of this repository.
+1) Make a copy of this repository `Problem-Setting`.
 2) Edit the `gen.cpp`, `sol.cpp` and `checker.cpp` files.
 3) Add the `cpp` solution files to be tested to the `solutions/` folder.
-4) Exceute : `./run.sh`
+4) Execute : `./run.sh`
 
 
 ### Notes
